@@ -1,16 +1,15 @@
-// Write your code here
-import './index.css'
-
 import {Component} from 'react'
-
-import Loader from 'react-loader-spinner'
 import {Link} from 'react-router-dom'
-
 import Cookies from 'js-cookie'
+import Loader from 'react-loader-spinner'
+import {BsPlusSquare, BsDashSquare} from 'react-icons/bs'
 
-import {BsDashSquare, BsPlusSquare} from 'react-icons/bs'
-import SimilarProductItem from '../SimilarProductItem'
+import CartContext from '../../context/CartContext'
+
 import Header from '../Header'
+import SimilarProductItem from '../SimilarProductItem'
+
+import './index.css'
 
 const apiStatusConstants = {
   initial: 'INITIAL',
@@ -21,17 +20,17 @@ const apiStatusConstants = {
 
 class ProductItemDetails extends Component {
   state = {
-    productDetaialsList: {},
-    apiCallStatus: apiStatusConstants.initial,
+    productData: {},
+    similarProductsData: [],
+    apiStatus: apiStatusConstants.initial,
     quantity: 1,
-    similarProductsList: [],
   }
 
   componentDidMount() {
-    this.getProductItemDetails()
+    this.getProductData()
   }
 
-  convertSnakeCaseToCamelCase = data => ({
+  getFormattedData = data => ({
     availability: data.availability,
     brand: data.brand,
     description: data.description,
@@ -39,45 +38,67 @@ class ProductItemDetails extends Component {
     imageUrl: data.image_url,
     price: data.price,
     rating: data.rating,
-    style: data.style,
     title: data.title,
     totalReviews: data.total_reviews,
   })
 
-  getProductItemDetails = async () => {
-    this.setState({apiCallStatus: apiStatusConstants.inProgress})
-
+  getProductData = async () => {
     const {match} = this.props
     const {params} = match
     const {id} = params
-    const apiUrl = `https://apis.ccbp.in/products/${id}`
 
+    this.setState({
+      apiStatus: apiStatusConstants.inProgress,
+    })
     const jwtToken = Cookies.get('jwt_token')
+    const apiUrl = `https://apis.ccbp.in/products/${id}`
     const options = {
-      method: 'GET',
       headers: {
         Authorization: `Bearer ${jwtToken}`,
       },
+      method: 'GET',
     }
-
     const response = await fetch(apiUrl, options)
-
     if (response.ok) {
-      const data = await response.json()
-      const modifiedData = this.convertSnakeCaseToCamelCase(data)
-      const similarProducts = data.similar_products.map(eachProduct =>
-        this.convertSnakeCaseToCamelCase(eachProduct),
+      const fetchedData = await response.json()
+      const updatedData = this.getFormattedData(fetchedData)
+      const updatedSimilarProductsData = fetchedData.similar_products.map(
+        eachSimilarProduct => this.getFormattedData(eachSimilarProduct),
       )
-
       this.setState({
-        productDetaialsList: modifiedData,
-        similarProductsList: similarProducts,
-        apiCallStatus: apiStatusConstants.success,
+        productData: updatedData,
+        similarProductsData: updatedSimilarProductsData,
+        apiStatus: apiStatusConstants.success,
       })
-    } else {
-      this.setState({apiCallStatus: apiStatusConstants.failure})
+    }
+    if (response.status === 404) {
+      this.setState({
+        apiStatus: apiStatusConstants.failure,
+      })
     }
   }
+
+  renderLoadingView = () => (
+    <div className="products-details-loader-container" data-testid="loader">
+      <Loader type="ThreeDots" color="#0b69ff" height="50" width="50" />
+    </div>
+  )
+
+  renderFailureView = () => (
+    <div className="product-details-error-view-container">
+      <img
+        alt="error view"
+        src="https://assets.ccbp.in/frontend/react-js/nxt-trendz-error-view-img.png"
+        className="error-view-image"
+      />
+      <h1 className="product-not-found-heading">Product Not Found</h1>
+      <Link to="/products">
+        <button type="button" className="button">
+          Continue Shopping
+        </button>
+      </Link>
+    </div>
+  )
 
   onDecrementQuantity = () => {
     const {quantity} = this.state
@@ -90,116 +111,118 @@ class ProductItemDetails extends Component {
     this.setState(prevState => ({quantity: prevState.quantity + 1}))
   }
 
-  renderProductDetailsSuccessView = () => {
-    const {productDetaialsList, quantity, similarProductsList} = this.state
-    const {
-      availability,
-      brand,
-      description,
-      imageUrl,
-      price,
-      rating,
-      title,
-      totalReviews,
-    } = productDetaialsList
+  renderProductDetailsView = () => (
+    <CartContext.Consumer>
+      {value => {
+        const {productData, quantity, similarProductsData} = this.state
+        const {
+          availability,
+          brand,
+          description,
+          imageUrl,
+          price,
+          rating,
+          title,
+          totalReviews,
+          id,
+        } = productData
+        const {addCartItem, cartList, incrementCartItemQuantity} = value
 
-    return (
-      <div className="product-details-success-view">
-        <div className="product-details-container">
-          <img src={imageUrl} alt="product" className="product-image" />
-          <div className="product">
-            <h1 className="product-name">{title}</h1>
-            <p className="price-details">Rs {price}/-</p>
-            <div className="rating-and-reviews-count">
-              <div className="rating-container">
-                <p className="rating">{rating}</p>
-                <img
-                  src="https://assets.ccbp.in/frontend/react-js/star-img.png"
-                  alt="star"
-                  className="star"
-                />
+        const onClickAddToCart = () => {
+          const productItem = cartList.find(
+            eachProduct => id === eachProduct.id,
+          )
+          console.log(productItem)
+          if (productItem === undefined) {
+            addCartItem({...productData, quantity})
+          } else {
+            incrementCartItemQuantity(id, quantity)
+          }
+        }
+
+        return (
+          <div className="product-details-success-view">
+            <div className="product-details-container">
+              <img src={imageUrl} alt="product" className="product-image" />
+              <div className="product">
+                <h1 className="product-name">{title}</h1>
+                <p className="price-details">Rs {price}/-</p>
+                <div className="rating-and-reviews-count">
+                  <div className="rating-container">
+                    <p className="rating">{rating}</p>
+                    <img
+                      src="https://assets.ccbp.in/frontend/react-js/star-img.png"
+                      alt="star"
+                      className="star"
+                    />
+                  </div>
+                  <p className="reviews-count">{totalReviews} Reviews</p>
+                </div>
+                <p className="product-description">{description}</p>
+                <div className="label-value-container">
+                  <p className="label">Available:</p>
+                  <p className="value">{availability}</p>
+                </div>
+                <div className="label-value-container">
+                  <p className="label">Brand:</p>
+                  <p className="value">{brand}</p>
+                </div>
+                <hr className="horizontal-line" />
+                <div className="quantity-container">
+                  <button
+                    type="button"
+                    className="quantity-controller-button"
+                    onClick={this.onDecrementQuantity}
+                    data-testid="minus"
+                  >
+                    .
+                    <BsDashSquare className="quantity-controller-icon" />
+                  </button>
+                  <p className="quantity">{quantity}</p>
+                  <button
+                    type="button"
+                    className="quantity-controller-button"
+                    onClick={this.onIncrementQuantity}
+                    data-testid="plus"
+                  >
+                    .
+                    <BsPlusSquare className="quantity-controller-icon" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="button add-to-cart-btn"
+                  onClick={onClickAddToCart}
+                >
+                  ADD TO CART
+                </button>
               </div>
-              <p className="reviews-count">{totalReviews} Reviews</p>
             </div>
-            <p className="product-description">{description}</p>
-            <div className="label-value-container">
-              <p className="label">Available:</p>
-              <p className="value">{availability}</p>
-            </div>
-            <div className="label-value-container">
-              <p className="label">Brand:</p>
-              <p className="value">{brand}</p>
-            </div>
-            <hr className="horizontal-line" />
-            <div className="quantity-container">
-              <button
-                type="button"
-                className="quantity-controller-button"
-                onClick={this.onDecrementQuantity}
-                data-testid="minus"
-              >
-                <BsDashSquare className="quantity-controller-icon" />
-              </button>
-              <p className="quantity">{quantity}</p>
-              <button
-                type="button"
-                className="quantity-controller-button"
-                onClick={this.onIncrementQuantity}
-                data-testid="plus"
-              >
-                <BsPlusSquare className="quantity-controller-icon" />
-              </button>
-            </div>
-            <button type="button" className="button add-to-cart-btn">
-              ADD TO CART
-            </button>
+            <h1 className="similar-products-heading">Similar Products</h1>
+            <ul className="similar-products-list">
+              {similarProductsData.map(eachSimilarProduct => (
+                <SimilarProductItem
+                  productDetails={eachSimilarProduct}
+                  key={eachSimilarProduct.id}
+                />
+              ))}
+            </ul>
           </div>
-        </div>
-        <h1 className="similar-products-heading">Similar Products</h1>
-        <ul className="similar-products-list">
-          {similarProductsList.map(eachSimilarProduct => (
-            <SimilarProductItem
-              productDetails={eachSimilarProduct}
-              key={eachSimilarProduct.id}
-            />
-          ))}
-        </ul>
-      </div>
-    )
-  }
-
-  renderProductDetailsFailureView = () => (
-    <div className="product-details-failure-view-container">
-      <img
-        alt="failure view"
-        src="https://assets.ccbp.in/frontend/react-js/nxt-trendz-error-view-img.png"
-        className="failure-view-image"
-      />
-      <h1 className="product-not-found-heading">Product Not Found</h1>
-      <Link to="/products">
-        <button type="button" className="button">
-          Continue Shopping
-        </button>
-      </Link>
-    </div>
+        )
+      }}
+    </CartContext.Consumer>
   )
 
-  renderLoaderView = () => (
-    <div data-testid="loader">
-      <Loader type="ThreeDots" color="#0b69ff" height={80} width={80} />
-    </div>
-  )
+  renderProductDetails = () => {
+    const {apiStatus} = this.state
 
-  renderProductItemDetails = () => {
-    const {apiCallStatus} = this.state
-
-    switch (apiCallStatus) {
+    switch (apiStatus) {
       case apiStatusConstants.success:
-        return this.renderProductDetailsSuccessView()
+        return this.renderProductDetailsView()
       case apiStatusConstants.failure:
-        return this.renderProductDetailsFailureView()
+        return this.renderFailureView()
       case apiStatusConstants.inProgress:
-        return this.renderLoaderView()
+        return this.renderLoadingView()
       default:
         return null
     }
@@ -210,7 +233,7 @@ class ProductItemDetails extends Component {
       <>
         <Header />
         <div className="product-item-details-container">
-          {this.renderProductItemDetails()}
+          {this.renderProductDetails()}
         </div>
       </>
     )
